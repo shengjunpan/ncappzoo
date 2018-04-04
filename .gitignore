@@ -1,15 +1,4 @@
-# ignore build directories and any files in build directories
-build/
-
-# ignore any qt-creator user files for cmake projects.  these are files
-# specific to a user and specific to qt-creator
-CMakeLists.txt.user
-
-#ignore pycharm ide files
-.idea
-
-#ignore python cache
-__pycache__
-
-
-
+caffe/SSD_MobileNet/MobileNetSSD_deploy.caffemodel
+caffe/SSD_MobileNet/MobileNetSSD_deploy.prototxt
+caffe/SSD_MobileNet/graph
+caffe/SSD_MobileNet/patched_MobileNetSSD_deploy.prototxt

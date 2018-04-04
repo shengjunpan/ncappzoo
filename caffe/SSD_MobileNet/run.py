@@ -78,10 +78,12 @@ def run_inference(image_to_classify, ssd_mobilenet_graph):
                 continue
 
             # clip the boxes to the image size incase network returns boxes outside of the image
-            x1 = max(0, int(output[base_index + 3] * image_to_classify.shape[0]))
-            y1 = max(0, int(output[base_index + 4] * image_to_classify.shape[1]))
-            x2 = min(image_to_classify.shape[0], int(output[base_index + 5] * image_to_classify.shape[0]))
-            y2 = min(image_to_classify.shape[1], int(output[base_index + 6] * image_to_classify.shape[1]))
+            source_image_height = image_to_classify.shape[0]
+            source_image_width = image_to_classify.shape[1]
+            x1 = max(0, int(output[base_index + 3] * source_image_width))
+            y1 = max(0, int(output[base_index + 4] * source_image_height))
+            x2 = min(source_image_width, int(output[base_index + 5] * source_image_width))
+            y2 = min(source_image_height, int(output[base_index + 6] * source_image_height))
 
             x1_ = str(x1)
             y1_ = str(y1)
@@ -113,8 +115,8 @@ def overlay_on_image(display_image, object_info):
     # the minimal score for a box to be shown
     min_score_percent = 60
 
-    source_image_width = display_image.shape[1]
     source_image_height = display_image.shape[0]
+    source_image_width = display_image.shape[1]
 
     base_index = 0
     class_id = object_info[base_index + 1]
@@ -168,7 +170,7 @@ def preprocess_image(src):
 
 # This function is called from the entry point to do
 # all the work of the program
-def main():
+def main(test_img_path):
     # name of the opencv window
     cv_window_name = "SSD MobileNet - hit any key to exit"
 
@@ -196,7 +198,7 @@ def main():
     graph = device.AllocateGraph(graph_in_memory)
 
     # read the image to run an inference on from the disk
-    infer_image = cv2.imread(IMAGE_FULL_PATH)
+    infer_image = cv2.imread(test_img_path)
 
     # run a single inference on the image and overwrite the
     # boxes and labels
@@ -204,6 +206,7 @@ def main():
 
     # display the results and wait for user to hit a key
     cv2.imshow(cv_window_name, infer_image)
+    print('Hit any key to continue. \033[31;1mDo NOT close window!\033[0m')
     cv2.waitKey(0)
 
     # Clean up the graph and the device
@@ -213,4 +216,8 @@ def main():
 
 # main entry point for program. we'll call main() to do what needs to be done.
 if __name__ == "__main__":
-    sys.exit(main())
+    if len(sys.argv) > 1:
+        test_img_path = sys.argv[1]
+    else:
+        test_img_path = IMAGE_FULL_PATH
+    sys.exit(main(test_img_path))

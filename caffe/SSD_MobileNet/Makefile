@@ -37,8 +37,8 @@ all: prereqs prototxt caffemodel compile
 .PHONY: prereqs
 prereqs:
 	@echo "\nmaking prereqs"
-	@sed -i 's/\r//' *.py
-	@chmod +x *.py
+	# @sed -i 's/\r//' *.py
+	# @chmod +x *.py
 
 .PHONY: prototxt
 prototxt: 
@@ -95,7 +95,7 @@ compile: caffemodel prototxt
 .PHONY: run_py
 run_py: all
 	@echo "\nmaking run_py"
-	python3 ./run.py
+	python3 ./run.py $(img)
 
 .PHONY: run
 run: run_py
@@ -115,5 +115,3 @@ clean:
 	rm -f ./${PATCHED_PROTOTXT_FILENAME}
 	rm -f ${SSD_MOBILENET_GRAPH_FILENAME}
 	rm -f ${CAFFEMODEL_FILENAME}
-
-
