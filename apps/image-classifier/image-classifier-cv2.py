@@ -10,10 +10,8 @@
 import os
 import sys
 import numpy
-import ntpath
 import argparse
-import skimage.io
-import skimage.transform
+import cv2
 
 import mvnc.mvncapi as mvnc
 
@@ -54,20 +52,17 @@ def load_graph( device ):
 
 # ---- Step 3: Pre-process the images ----------------------------------------
 
-def pre_process_image():
+def pre_process_image(original_image):
 
-    # Read & resize image [Image size is defined during training]
-    img = skimage.io.imread( ARGS.image )
+    img = cv2.resize(original_image, tuple(ARGS.dim))
     print('type(img)={}, img.shape={}'.format(type(img), img.shape))
-    img = skimage.transform.resize( img, ARGS.dim, preserve_range=True )
-
-    # Convert RGB to BGR [skimage reads image in RGB, but Caffe uses BGR]
-    if( ARGS.colormode == "BGR" ):
+    
+    # Convert BGR to RGB [cv2 uses BGR]
+    if( ARGS.colormode == "RGB" ):
         img = img[:, :, ::-1]
 
     # Mean subtraction & scaling [A common technique used to center the data]
-    img = img.astype( numpy.float16 )
-    img = ( img - numpy.float16( ARGS.mean ) ) * ARGS.scale
+    img = (img - ARGS.mean) * ARGS.scale
 
     return img
 
@@ -81,14 +76,9 @@ def infer_image( graph, img ):
 
     # The first inference takes an additional ~20ms due to memory 
     # initializations, so we make a 'dummy forward pass'.
-    graph.LoadTensor( img, 'user object' )
-    output, userobj = graph.GetResult()
-
-    # Load the image as a half-precision floating point array
-    graph.LoadTensor( img, 'user object' )
-
-    # Get the results from NCS
-    output, userobj = graph.GetResult()
+    for i in range(2):
+        graph.LoadTensor( img.astype(numpy.float16), 'user object' )
+        output, userobj = graph.GetResult()
 
     # Sort the indices of top predictions
     order = output.argsort()[::-1][:NUM_PREDICTIONS]
@@ -98,19 +88,13 @@ def infer_image( graph, img ):
 
     # Print the results
     print( "\n==============================================================" )
-    print( "Top predictions for", ntpath.basename( ARGS.image ) )
+    print( "Top predictions for", os.path.basename( ARGS.image ) )
     print( "Execution time: " + str( numpy.sum( inference_time ) ) + "ms" )
     print( "--------------------------------------------------------------" )
     for i in range( 0, NUM_PREDICTIONS ):
         print( "%3.1f%%\t" % (100.0 * output[ order[i] ] )
                + labels[ order[i] ] )
     print( "==============================================================" )
-
-    # If a display is available, show the image on which inference was performed
-    if 'DISPLAY' in os.environ:
-        skimage.io.imshow( ARGS.image )
-        skimage.io.use_plugin('gtk', 'imshow')
-        skimage.io.show()
 
 # ---- Step 5: Unload the graph and close the device -------------------------
 
@@ -125,8 +109,13 @@ def main():
     device = open_ncs_device()
     graph = load_graph( device )
 
-    img = pre_process_image()
+    original_image = cv2.imread(ARGS.image)
+    img = pre_process_image(original_image)
     infer_image( graph, img )
+
+    cv2.imshow(os.path.basename(ARGS.image), original_image)
+    print('Hit any key to continue. \033[31;1mDo NOT close window!\033[0m')
+    cv2.waitKey(0)
 
     close_ncs_device( device, graph )
 
