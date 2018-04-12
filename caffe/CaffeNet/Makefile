@@ -5,7 +5,6 @@ endif
 
 NCCOMPILE = mvNCCompile
 NCPROFILE = mvNCProfile
-NCCHECK   = mvNCCheck
 
 RAW_GIT_DIR=https://raw.githubusercontent.com/BVLC/caffe/master/models/bvlc_reference_caffenet
 PROTOTXT_FILENAME= deploy.prototxt
@@ -22,12 +21,13 @@ VALIDATION_DATA=model_data/input/validation_lmdb
 
 CAFFEMODEL_FILENAME = bvlc_reference_caffenet.caffemodel
 GET_CAFFEMODEL = wget -P . -N http://dl.caffe.berkeleyvision.org/${CAFFEMODEL_FILENAME}
+RETRAINED_CAFFEMODEL_FILENAME = model_data/snapshots/caffenet_iter_5000.caffemodel
 
 MODEL_DATA_DIR=model_data
 SNAPSHOTS_DIR=model_data/snapshots
 
 .PHONY: all
-all: profile check compile
+all: profile compile
 
 .PHONY: prereqs
 prereqs:
@@ -154,34 +154,34 @@ browse_profile: profile
 	fi ; 
 
 .PHONY: compile
-compile: prototxt caffemodel
+compile: prototxt ${RETRAINED_CAFFEMODEL_FILENAME}
 	@echo "\nmaking compile"
 	${NCCOMPILE} -w ${CAFFEMODEL_FILENAME} -s 12 ${PROTOTXT_FILENAME}
 
-.PHONY: check
-check: prototxt caffemodel
-	@echo "\nmaking check"
-#-${NCCHECK} -w ${CAFFEMODEL_FILENAME} -i ../../data/images/cat.jpg -s 12 -id 281 ${PROTOTXT_FILENAME} -S 255 -M ../../data/ilsvrc12/ilsvrc_2012_mean.npy
-	-${NCCHECK} -w ${CAFFEMODEL_FILENAME} -i ../../data/images/cat.jpg -s 12 -id 281 ${PROTOTXT_FILENAME} -M 110 -S 255
+.PHONY: predict-device
+predict-device: compile
+	@echo "\nmaking predictions on device"
+	python3 predict-device.py ../../data/images/dogs-and-cats/*.jpg
 
-.PHONY: run
-run: compile
-	@echo "\nmaking run"
-	./run.py
+.PHONY: predict-local
+predict-local: predict-local.py ${RETRAINED_CAFFEMODEL_FILENAME}
+	@echo "\nmaking predictions locally"
+	python3 predict-local.py ../../data/images/dogs-and-cats/*.jpg
 
 .PHONY: help
 help:
 	@echo "possible make targets: ";
 	@echo "  make help - shows this message";
-	@echo "  make all - makes the following: prototxt, profile, compile, check, run_py";
+	@echo "  make all - makes the following: prototxt, profile, compile, run_py";
 	@echo "  make prototxt - downloads and adds input shape to Caffe prototxt file";
 	@echo "  make train-prototxt - downloads Caffe training prototxt file";
 	@echo "  make caffemodel - downloads the caffemodel for the network"
+	@echo "  make train - train the downloaded model for dogs and cats"
 	@echo "  make compile - runs SDK compiler tool to compile the NCS graph file for the network";
-	@echo "  make check - runs SDK checker tool to verify an NCS graph file";
 	@echo "  make profile - runs the SDK profiler tool to profile the network creating output_report.html";
-	@echo "  make browse_profile - runs the SDK profiler tool and brings up report in browser.";
-	@echo "  make run - runs the run.py python example program:";
+	@echo "  make browse_profile - runs the SDK profiler tool and brings up report in browser";
+	@echo "  make predict-device - run predict-device.py on example images";
+	@echo "  make predict-local - run predict-local.py on example images";
 	@echo "  make clean - removes all created content"
 
 clean_caffe_prototxt:

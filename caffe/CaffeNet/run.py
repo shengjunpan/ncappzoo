@@ -16,7 +16,7 @@ from os import system
 
 dim=(227,227)
 EXAMPLES_BASE_DIR='../../'
-imagename = EXAMPLES_BASE_DIR+'data/images/nps_electric_guitar.png'
+imagename = EXAMPLES_BASE_DIR+'data/images/dogs-and-cats/1.jpg'
 
 def infer(imgname):
         # ***************************************************************

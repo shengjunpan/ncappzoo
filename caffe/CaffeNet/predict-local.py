@@ -18,69 +18,48 @@ IMAGE_HEIGHT = 227
 Image processing helper function
 '''
 
-def transform_img(img, img_width=IMAGE_WIDTH, img_height=IMAGE_HEIGHT):
+def debug_array(var, name):
+    print('{}: type={}, dtype={}, shape={}'.format(name, type(var), var.dtype, var.shape))
 
+def transform_img(img, img_width=IMAGE_WIDTH, img_height=IMAGE_HEIGHT):
     #Histogram Equalization
     img[:, :, 0] = cv2.equalizeHist(img[:, :, 0])
     img[:, :, 1] = cv2.equalizeHist(img[:, :, 1])
     img[:, :, 2] = cv2.equalizeHist(img[:, :, 2])
-
+    
     #Image Resizing
     img = cv2.resize(img, (img_width, img_height), interpolation = cv2.INTER_CUBIC)
 
+    global TRANSFORMER
+    img = TRANSFORMER.preprocess('data', img)
+    
     return img
 
 test_imge_paths = sys.argv[1:]
 
-print('Reading mean image, caffe model and its weights')
+print('Reading mean image')
 mean_blob = caffe_pb2.BlobProto()
 with open('model_data/input/mean.binaryproto', 'rb') as f:
     mean_blob.ParseFromString(f.read())
 mean_array = np.asarray(mean_blob.data, dtype=np.float32).reshape(
     (mean_blob.channels, mean_blob.height, mean_blob.width))
 
-glob_pattern = 'model_data/snapshots/caffenet_iter_*.caffemodel'
-match_pattern = 'model_data/snapshots/caffenet_iter_([0-9]+)\.caffemodel'
-models = glob.glob(glob_pattern)
-iter_matcher = re.compile(match_pattern)
-if models:
-    max_iter = None
-    for model in models:
-        m = iter_matcher.match(model)
-        if m:
-            iter = int(m.group(1))
-            if max_iter is None or iter > max_iter:
-                max_iter = iter
-    if max_iter is None:
-        raise Exception('No model found: ' + match_pattern)
-    else:
-        model_file = model
-        print('model file:', model_file)
-else:
-    raise Exception('No model found: ' + glob_pattern)
-
-print('Read model architecture and trained model\'s weights')
+print('Reading model architecture and weights')
 net = caffe.Net('deploy.prototxt',
-                model_file,
+                'model_data/snapshots/caffenet_iter_5000.caffemodel',
                 caffe.TEST)
 
 print('Define image transformers')
-transformer = caffe.io.Transformer({'data': net.blobs['data'].data.shape})
-transformer.set_mean('data', mean_array)
-transformer.set_transpose('data', (2,0,1))
-
-print('Making predicitions')
+TRANSFORMER = caffe.io.Transformer({'data': net.blobs['data'].data.shape})
+TRANSFORMER.set_transpose('data', (2,0,1))
+TRANSFORMER.set_mean('data', mean_array)
 
 print('Reading image paths')
-output_img_dir = 'model_data/predictions'
-if not os.path.exists(output_img_dir):
-    os.makedirs(output_img_dir)
-
 for img_path in test_imge_paths:
     img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-    img = transform_img(img, img_width=IMAGE_WIDTH, img_height=IMAGE_HEIGHT)
-    
-    net.blobs['data'].data[...] = transformer.preprocess('data', img)
+
+    net.blobs['data'].data[...] = transform_img(
+        img, img_width=IMAGE_WIDTH, img_height=IMAGE_HEIGHT)
     out = net.forward()
     pred_probas = out['prob']
 
@@ -94,6 +73,9 @@ for img_path in test_imge_paths:
                 fontScale=0.5,
                 color=(0,0,255),
                 thickness=2)
-    output_img_path = os.path.join(output_img_dir, os.path.basename(img_path))
-    cv2.imwrite(output_img_path, img)
-    print('Saved prediction to', output_img_path)
+
+    cv_window_name = os.path.basename(img_path)
+    cv2.imshow(cv_window_name, img)
+    print('Hit any key to continue. \033[31;1mDo NOT close window!\033[0m')
+    cv2.waitKey(0)
+    cv2.destroyWindow(cv_window_name)
