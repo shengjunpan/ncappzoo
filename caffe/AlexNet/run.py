@@ -18,6 +18,9 @@ dim=(227,227)
 EXAMPLES_BASE_DIR='../../'
 imagename = EXAMPLES_BASE_DIR+'data/images/nps_electric_guitar.png'
 
+def debug_array(var, name):
+        print('{}: type={}, dtype={}, shape={}'.format(name, type(var), var.dtype, var.shape))
+
 def infer(imgname):
         # ***************************************************************
         # get labels
@@ -83,6 +86,7 @@ def infer(imgname):
         # Print the results of the inference form the NCS
         # ***************************************************************
         order = output.argsort()[::-1][:6]
+
         print('\n------- predictions --------')
         result = ""
         for i in range(0,5):
