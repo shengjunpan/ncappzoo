@@ -51,6 +51,7 @@ mvNCProfile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemode
 mvNCCompile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemodel -s 12 
 
 # Make predictions using trained model
-python3 predict.py gpu ../../data/images/dogs-and-cats/*.jpg
-python3 predict.py ncs ../../data/images/dogs-and-cats/*.jpg
+python3 run.py predict gpu ../../data/images/dogs-and-cats/*.jpg
+python3 run.py predict ncs ../../data/images/dogs-and-cats/*.jpg
+python3 run.py validate gpu model_data/input/validation_lmdb
 
