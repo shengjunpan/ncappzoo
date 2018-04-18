@@ -1,9 +1,9 @@
 caffe/SSD_MobileNet/MobileNetSSD_deploy.caffemodel
 caffe/SSD_MobileNet/MobileNetSSD_deploy.prototxt
-caffe/SSD_MobileNet/graph
 caffe/SSD_MobileNet/patched_MobileNetSSD_deploy.prototxt
 tensorflow/mobilenets/model/
 data/ilsvrc12
 caffe/CaffeNet/model_data
 caffe/CaffeNet/*.caffemodel
-caffe/CaffeNet/graph
+caffe/**/graph
+caffe/**/graph_*

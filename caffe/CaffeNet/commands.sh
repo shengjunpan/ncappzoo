@@ -44,6 +44,8 @@ caffe train \
       --weights bvlc_reference_caffenet.caffemodel \
       2>&1 | tee model_data/snapshots/train.log
 
+python3 plot_learning_curve.py model_data/snapshots/train.log model_data/results/learning_curve.png
+
 # Profile deploy prototxt
 mvNCProfile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemodel -s 12
 
@@ -51,7 +53,30 @@ mvNCProfile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemode
 mvNCCompile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemodel -s 12 
 
 # Make predictions using trained model
-python3 run.py predict gpu ../../data/images/dogs-and-cats/*.jpg
-python3 run.py predict ncs ../../data/images/dogs-and-cats/*.jpg
-python3 run.py validate gpu model_data/input/validation_lmdb
+python3 run.py --device=gpu --action=predict ../../data/images/dogs-and-cats/*.jpg
+python3 run.py --device=ncs --action=predict ../../data/images/dogs-and-cats/*.jpg
+
+python3 run.py --device=gpu --action=validate model_data/input/validation_lmdb
+python3 run.py --device=ncs --action=validate model_data/input/validation_lmdb
+
+
+##################################
+if [ ! -e model_data/snapshots_0 ]; then
+    mkdir -p model_data/snapshots_0
+fi
+
+# Train a new model
+caffe train \
+      --solver solver_0.prototxt \
+      2>&1 | tee model_data/snapshots_0/train.log
+
+python3 plot_learning_curve.py model_data/snapshots_0/train.log model_data/results/learning_curve_0.png
+
+mvNCCompile deploy.prototxt -w model_data/snapshots_0/caffenet_iter_5000.caffemodel -s 12 -o graph_0
+
+python3 run.py --device=gpu --action=predict --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel ../../data/images/dogs-and-cats/*.jpg
+python3 run.py --device=ncs --action=predict --graph=graph_0 ../../data/images/dogs-and-cats/*.jpg
+
+python3 run.py --device=gpu --action=validate --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel model_data/input/validation_lmdb
+python3 run.py --device=ncs --action=validate --graph=graph_0 model_data/input/validation_lmdb
 

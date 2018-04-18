@@ -6,20 +6,39 @@ import cv2
 import caffe
 import lmdb
 import numpy as np
+import argparse
+
 from caffe.proto import caffe_pb2
 from mvnc import mvncapi as mvnc
 from abc import ABC, abstractmethod
 
 caffe.set_mode_gpu() 
 
+_parser = argparse.ArgumentParser()
+_parser.add_argument("-d", "--device", default='gpu',
+                     help="choose device: gpu or ncs")
+_parser.add_argument("-a", "--action", default='predict',
+                     help="choose action: predict or validate")
+
+_parser.add_argument("-m", "--mean-proto",
+                     default='model_data/input/mean.binaryproto',
+                     help="path to mean binary proto file")
+_parser.add_argument("-c", "--caffemodel",
+                     default='model_data/snapshots/caffenet_iter_5000.caffemodel',
+                     help="path to caffe model file")
+_parser.add_argument("-p", "--prototxt",
+                     default='deploy.prototxt',
+                     help="path to prototxt file")
+_parser.add_argument("-g", "--graph",
+                     default='graph',
+                     help="path to compiled NCS graph file")
+_parser.add_argument("image", nargs="+",
+                     help="image (predict) or lmdb (validate) paths")
+ARGS = _parser.parse_args()
+
 #Size of images
 IMAGE_WIDTH = 227
 IMAGE_HEIGHT = 227
-
-MEAN_PROTO = 'model_data/input/mean.binaryproto'
-PROTOTXT = 'deploy.prototxt'
-CAFFEMODEL = 'model_data/snapshots/caffenet_iter_5000.caffemodel'
-NCS_GRAPH = 'graph'
 
 class Predictor(ABC):
     """
@@ -111,25 +130,22 @@ class DevicePredictor(Predictor):
 def debug_array(var, name):
     print('{}: type={}, dtype={}, shape={}'.format(name, type(var), var.dtype, var.shape))
 
-action = sys.argv[1].lower()
-
-device= sys.argv[2].lower()
-if device == 'gpu':
-    predictor = LocalPredictor(IMAGE_WIDTH, IMAGE_HEIGHT, MEAN_PROTO, PROTOTXT, CAFFEMODEL)
-elif device == 'ncs':
-    predictor = DevicePredictor(IMAGE_WIDTH, IMAGE_HEIGHT, MEAN_PROTO, NCS_GRAPH)
+if ARGS.device == 'gpu':
+    predictor = LocalPredictor(IMAGE_WIDTH, IMAGE_HEIGHT, ARGS.mean_proto, ARGS.prototxt, ARGS.caffemodel)
+elif ARGS.device == 'ncs':
+    predictor = DevicePredictor(IMAGE_WIDTH, IMAGE_HEIGHT, ARGS.mean_proto, ARGS.graph)
 else:
     print("device must be 'gpu' or 'ncs'",file=sys.stderr)
     exit(2)
 
-if action == 'predict':
+if ARGS.action == 'predict':
     print('Reading image paths')
-    for img_path in sys.argv[3:]:
+    for img_path in ARGS.image:
         img = cv2.imread(img_path, cv2.IMREAD_COLOR)
     
         label, prob = predictor.predict(img)
         class_name = 'cat' if label == 0 else 'dog'
-        print('{} [{:.2f}%]: {}'.format(class_name, prob*100, img_path))
+        print('{} [{:.4f}]: {}'.format(class_name, prob, img_path))
     
         cv2.rectangle(img, (0,0), (100,20), (255,255,255), cv2.FILLED)
         cv2.putText(img=img,
@@ -144,23 +160,24 @@ if action == 'predict':
         cv2.imshow(cv_window_name, img)
         cv2.waitKey(0)
         cv2.destroyWindow(cv_window_name)
-elif action == 'validate':
-    validation_lmdb = sys.argv[3]
-    env = lmdb.open(validation_lmdb, readonly=True)
-    with env.begin() as txn:
-        n = 0
-        tp = 0
-        cursor = txn.cursor()
-        for key, value in cursor:
-            n += 1
-            datum = caffe_pb2.Datum()
-            datum.ParseFromString(value)
-            input_shape = (datum.channels, datum.height, datum.width)
-            img = np.fromstring(datum.data, dtype=np.uint8).reshape(input_shape)
-            label, _ = predictor.predict(img, preprocessed=True)
-            if label == datum.label:
-                tp += 1
-            if n % 100 == 0:
-                print('Processed {} ...'.format(n))
-        print('n={}, tp={}, accuracy={:.2f}%'.format(tp, n, 100.0*tp/n))
-    env.close()
+elif ARGS.action == 'validate':
+    n = 0
+    tp = 0
+    for validation_lmdb in ARGS.image:
+        print('Validating', validation_lmdb)
+        env = lmdb.open(validation_lmdb, readonly=True)
+        with env.begin() as txn:
+            cursor = txn.cursor()
+            for key, value in cursor:
+                n += 1
+                datum = caffe_pb2.Datum()
+                datum.ParseFromString(value)
+                input_shape = (datum.channels, datum.height, datum.width)
+                img = np.fromstring(datum.data, dtype=np.uint8).reshape(input_shape)
+                label, _ = predictor.predict(img, preprocessed=True)
+                if label == datum.label:
+                    tp += 1
+                if n % 100 == 0:
+                    print('Processed {} ...'.format(n))
+        env.close()
+    print('n={}, tp={}, accuracy={:.4f}'.format(tp, n, tp/n))
