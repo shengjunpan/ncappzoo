@@ -1,3 +1,4 @@
+```console
 if [ ! -e model_data/snapshots ]; then
     mkdir -p model_data/snapshots
 fi
@@ -79,4 +80,4 @@ python3 run.py --device=ncs --action=predict --graph=graph_0 ../../data/images/d
 
 python3 run.py --device=gpu --action=validate --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel model_data/input/validation_lmdb
 python3 run.py --device=ncs --action=validate --graph=graph_0 model_data/input/validation_lmdb
-
+```
