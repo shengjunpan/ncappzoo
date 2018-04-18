@@ -7,3 +7,5 @@ caffe/CaffeNet/model_data
 caffe/CaffeNet/*.caffemodel
 caffe/**/graph
 caffe/**/graph_*
+output.*
+output_*
