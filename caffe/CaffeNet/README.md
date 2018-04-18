@@ -70,7 +70,10 @@ python3 run.py --device=gpu --action=validate model_data/input/validation_lmdb
 python3 run.py --device=ncs --action=validate model_data/input/validation_lmdb
 
 
-##################################
+####################################
+# Training without transfer learning
+####################################
+
 if [ ! -e model_data/snapshots_0 ]; then
     mkdir -p model_data/snapshots_0
 fi
