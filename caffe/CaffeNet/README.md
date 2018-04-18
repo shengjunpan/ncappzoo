@@ -1,4 +1,4 @@
-```console
+```bash
 if [ ! -e model_data/snapshots ]; then
     mkdir -p model_data/snapshots
 fi
