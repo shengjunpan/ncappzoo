@@ -1,46 +1,82 @@
-# Introduction
-The [AlexNet](https://github.com/BVLC/caffe/tree/master/models/bvlc_alexnet) network can be used for image classification.  The provided Makefile does the following
-1. Downloads the Caffe prototxt file and makes any changes necessary to work with the Movidius Neural Compute SDK
-2. Downloads and generates the required ilsvrc12 data
-3. Downloads the .caffemodel file which was trained and provided by BVLC.
-3. Profiles, Compiles and Checks the network using the Neural Compute SDK.
-4. There is a python example (run.py) and a C++ example (cpp/run.cpp) which both do a single inference on an image as an example of how to use this network with the Neural Compute API thats provided in the Neural Compute SDK.
+if [ ! -e model_data/snapshots ]; then
+    mkdir -p model_data/snapshots
+fi
 
-# Makefile
-Provided Makefile describes various targets that help with the above mentioned tasks.
+# Download and modify training prototxt
+wget https://raw.githubusercontent.com/BVLC/caffe/master/models/bvlc_reference_caffenet/train_val.prototxt -O train_val.prototxt.downloaded && \
+awk ' \
+/^ *num_output: 1000/ {print "num_output: 2"; next } \
+/fc8/ { gsub(/fc8/, "fc8-cats-dogs"); print; next } \
+/^ *batch_size: [0-9]+/ {print "batch_size: 64"; next} \
+/^ *source: "examples\/imagenet\/ilsvrc12_train_lmdb"/ { \
+  print "source: \"model_data/input/train_lmdb\""; \
+  next \
+} \
+/^ *source: "examples\/imagenet\/ilsvrc12_val_lmdb"/ { \
+  print "source: \"model_data/input/validation_lmdb\""; \
+  next \
+} \
+/^ *mean_file: "data\/ilsvrc12\/imagenet_mean.binaryproto"/ { \
+  print "mean_file: \"model_data/input/mean.binaryproto\""; \
+  next \
+} \
+{print}' < train_val.prototxt.downloaded > train_val.prototxt && \
+python3 ${CAFFE_HOME}/python/draw_net.py train_val.prototxt model_data/results/caffenet_train.png
 
-## make help
-Shows makefile possible targets and brief descriptions. 
 
-## make all
-Makes the following: prototxt, caffemodel, profile, compile, check, cpp, run, run_cpp.
+# Download and modify deploy prototxt
+wget https://raw.githubusercontent.com/BVLC/caffe/master/models/bvlc_reference_caffenet/deploy.prototxt -O deploy.prototxt.downloaded && \
+head -1 deploy.prototxt.downloaded > deploy.prototxt && \
+cat input_shape.prototxt >> deploy.prototxt && \
+awk ' \
+NR<=7 {next} \
+/^ *num_output: 1000/ {print "num_output: 2"; next } \
+/fc8/ { gsub(/fc8/, "fc8-cats-dogs"); print; next } \
+{print}' < deploy.prototxt.downloaded >> deploy.prototxt && \
+python3 ${CAFFE_HOME}/python/draw_net.py deploy.prototxt model_data/results/caffenet_deploy.png
 
-## make prototxt
-Downloads the Caffe prototxt file and makes a few changes necessary to work with the Movidius Neural Compute SDK.
+# Download initial weights
+wget http://dl.caffe.berkeleyvision.org/bvlc_reference_caffenet.caffemodel
 
-## make caffemodel
-Downloads the Caffe model file
+# Train a new model
+caffe train \
+      --solver solver.prototxt \
+      --weights bvlc_reference_caffenet.caffemodel \
+      2>&1 | tee model_data/snapshots/train.log
 
-## make profile
-Runs the provided network on the NCS and generates per layer statistics that are helpful for understanding the performance of the network on the Neural Compute Stick.  Output diplayed on terminal and the output_report.html file is also created.  Demonstrates NCSDK tool: cnprofile 
+python3 plot_learning_curve.py model_data/snapshots/train.log model_data/results/learning_curve.png
 
-## make browse_profile
-profiles the network similar to make profile and then brings up output_report.html in a browser.  Demonstrates NCSDK tool: mvNCProfile 
+# Profile deploy prototxt
+mvNCProfile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemodel -s 12
 
-## make compile
-Uses the network description and the trained weights files to generate a Movidius internal 'graph' format file.  This file is later loaded on the Neural Compute Stick where the inferences on the network can be executed.  Demonstrates NCSDK tool: mvNCCompile
+# Compile trained model into 'graph'
+mvNCCompile deploy.prototxt -w model_data/snapshots/caffenet_iter_5000.caffemodel -s 12 
 
-## make check
-Runs the network on Caffe on the CPU and compares results when run on the Neural Compute Stick.  Consistency results are output to the terminal.  Demonstrates the NCSDK tool: mvNCCheck.
+# Make predictions using trained model
+python3 run.py --device=gpu --action=predict ../../data/images/dogs-and-cats/*.jpg
+python3 run.py --device=ncs --action=predict ../../data/images/dogs-and-cats/*.jpg
 
-## make run_py
-Runs the provided run.py python script which sends a single image to the Neural Compute Stick and receives and displays the inference results.
+python3 run.py --device=gpu --action=validate model_data/input/validation_lmdb
+python3 run.py --device=ncs --action=validate model_data/input/validation_lmdb
 
-## make cpp
-Builds the C++ example program run_cpp which can be executed with make run_cpp. 
 
-## make run_cpp
-Runs the provided run_cpp executable program that is built via make cpp.  This program sends a single image to the Neural Compute Stick and receives and displays the inference results.
+##################################
+if [ ! -e model_data/snapshots_0 ]; then
+    mkdir -p model_data/snapshots_0
+fi
 
-## make clean
-Removes all the temporary and target files that are created by the Makefile.
+# Train a new model
+caffe train \
+      --solver solver_0.prototxt \
+      2>&1 | tee model_data/snapshots_0/train.log
+
+python3 plot_learning_curve.py model_data/snapshots_0/train.log model_data/results/learning_curve_0.png
+
+mvNCCompile deploy.prototxt -w model_data/snapshots_0/caffenet_iter_5000.caffemodel -s 12 -o graph_0
+
+python3 run.py --device=gpu --action=predict --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel ../../data/images/dogs-and-cats/*.jpg
+python3 run.py --device=ncs --action=predict --graph=graph_0 ../../data/images/dogs-and-cats/*.jpg
+
+python3 run.py --device=gpu --action=validate --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel model_data/input/validation_lmdb
+python3 run.py --device=ncs --action=validate --graph=graph_0 model_data/input/validation_lmdb
+
