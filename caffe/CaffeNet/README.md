@@ -43,7 +43,8 @@ python3 ${CAFFE_HOME}/python/draw_net.py deploy.prototxt caffenet_deploy.png
 # Download initial weights
 wget http://dl.caffe.berkeleyvision.org/bvlc_reference_caffenet.caffemodel
 
-# Train a new model
+# Before training, create train_lmdb and validation_lmdb. See
+# http://adilmoujahid.com/posts/2016/06/introduction-deep-learning-python-caffe/
 caffe train \
       --solver solver.prototxt \
       --weights bvlc_reference_caffenet.caffemodel \
