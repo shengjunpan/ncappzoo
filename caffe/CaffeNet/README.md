@@ -61,9 +61,9 @@ mvNCCompile deploy.prototxt -s 12 \
 -w model_data/snapshots/caffenet_iter_5000.caffemodel
 
 # Make predictions using trained model
-python3 run.py --device=gpu --action=predict dogs-and-cats/*.jpg
+python3 run.py --device=gpu --action=predict model_data/data/test/*.jpg
 
-python3 run.py --device=ncs --action=predict dogs-and-cats/*.jpg
+python3 run.py --device=ncs --action=predict model_data/data/test/*.jpg
 
 python3 run.py --device=gpu --action=validate model_data/input/validation_lmdb
 
@@ -90,10 +90,10 @@ mvNCCompile deploy.prototxt -s 12 -o graph_0 \
 
 python3 run.py --device=gpu --action=predict \
 --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel \
-dogs-and-cats/*.jpg
+model_data/data/test/*.jpg
 
 python3 run.py --device=ncs --action=predict --graph=graph_0 \
-dogs-and-cats/*.jpg
+model_data/data/test/*.jpg
 
 python3 run.py --device=gpu --action=validate \
 --caffemodel=model_data/snapshots_0/caffenet_iter_5000.caffemodel \

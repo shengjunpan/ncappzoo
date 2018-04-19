@@ -7,6 +7,7 @@ import caffe
 import lmdb
 import numpy as np
 import argparse
+import pandas as pd
 
 from caffe.proto import caffe_pb2
 from mvnc import mvncapi as mvnc
@@ -35,6 +36,9 @@ _parser.add_argument("-p", "--prototxt",
 _parser.add_argument("-g", "--graph",
                      default='graph',
                      help="path to compiled NCS graph file")
+_parser.add_argument("-e", "--equalized",
+                     action='store_true',
+                     help="whether equalization histogram has been applied to the image")
 _parser.add_argument("image", nargs="+",
                      help="image (predict) or lmdb (validate) paths")
 ARGS = _parser.parse_args()
@@ -55,20 +59,19 @@ class Predictor(ABC):
         with open(mean_proto, 'rb') as f:
             mean_blob.ParseFromString(f.read())
         input_shape = (mean_blob.channels, mean_blob.height, mean_blob.width)
-        self.mean_array = np.asarray(mean_blob.data, dtype=np.float32).reshape(input_shape)
+        self.mean_array = np.asarray(mean_blob.data, dtype=np.float32).reshape(input_shape).transpose((1,2,0)) # CHW -> HWC
 
         super().__init__()
 
-    def transform_img(self, img, preprocessed):
-        if not preprocessed:
+    def transform_img(self, img, equalized):
+        if not equalized:
             #Histogram Equalization
             img[:, :, 0] = cv2.equalizeHist(img[:, :, 0])
             img[:, :, 1] = cv2.equalizeHist(img[:, :, 1])
             img[:, :, 2] = cv2.equalizeHist(img[:, :, 2])
     
-            #Image Resizing
-            img = cv2.resize(img, (self.input_width, self.input_height), interpolation = cv2.INTER_CUBIC)
-            img = img.transpose((2,0,1)) # HWC -> CHW
+        #Image Resizing
+        img = cv2.resize(img, (self.input_width, self.input_height), interpolation = cv2.INTER_CUBIC)
 
         img = img.astype(np.float32)
         img -= self.mean_array
@@ -87,8 +90,9 @@ class LocalPredictor(Predictor):
         self.net = caffe.Net(prototxt, caffemodel, caffe.TEST)
         super().__init__(input_width, input_height, mean_proto)
         
-    def predict(self, img, preprocessed=False):
-        img = super(LocalPredictor, self).transform_img(img, preprocessed)
+    def predict(self, img, equalized=False):
+        img = super(LocalPredictor, self).transform_img(img, equalized)
+        img = img.transpose((2,0,1)) # HWC -> CHW
         img = img.reshape([1] + list(img.shape))
         self.net.blobs['data'].data[...] = img
         
@@ -116,9 +120,8 @@ class DevicePredictor(Predictor):
 
         super().__init__(input_width, input_height, mean_proto)
         
-    def predict(self, img, preprocessed=False):
-        img = super(DevicePredictor, self).transform_img(img, preprocessed)
-        img = img.transpose((1,0,2)) # CHW -> HWC (for NCS)
+    def predict(self, img, equalized=False):
+        img = super(DevicePredictor, self).transform_img(img, equalized)
         self.graph.LoadTensor(img.astype(np.float16), 'user object')
 
         output, userobj = self.graph.GetResult()
@@ -148,7 +151,7 @@ if ARGS.action == 'predict':
     for img_path in ARGS.image:
         img = cv2.imread(img_path, cv2.IMREAD_COLOR)
     
-        label, prob = predictor.predict(img)
+        label, prob = predictor.predict(img, ARGS.equalized)
         class_name = 'cat' if label == 0 else 'dog'
         print('{} [{:.4f}]: {}'.format(class_name, prob, img_path))
     
@@ -168,27 +171,24 @@ if ARGS.action == 'predict':
 elif ARGS.action == 'validate':
     n = 0
     tp = 0
-    probs = []
-    for validation_lmdb in ARGS.image:
-        print('Validating', validation_lmdb)
-        env = lmdb.open(validation_lmdb, readonly=True)
-        with env.begin() as txn:
-            cursor = txn.cursor()
-            for key, value in cursor:
-                n += 1
-                datum = caffe_pb2.Datum()
-                datum.ParseFromString(value)
-                input_shape = (datum.channels, datum.height, datum.width)
-                img = np.fromstring(datum.data, dtype=np.uint8).reshape(input_shape)
-                label, prob = predictor.predict(img, preprocessed=True)
-                probs.append(prob if label == 0 else 1.0 - prob)
-                
-                if label == datum.label:
-                    tp += 1
-                if n % 100 == 0:
-                    print('Processed {} ...'.format(n))
-        env.close()
+    probs = pd.DataFrame(np.zeros((len(ARGS.image), 2)), columns=['image','prob0'])
+    for img_path in ARGS.image:
+        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        class_num, prob = predictor.predict(img, ARGS.equalized)
+        
+        label = 'cat' if class_num == 0 else 'dog'
+        filename = os.path.basename(img_path)
+        true_label = filename[:3]
+
+        prob0 = prob if class_num == 0 else 1.0 - prob
+        probs.iloc[n,:] = [filename, prob0]
+        
+        n += 1
+        if label == true_label:
+            tp += 1
+            if n % 100 == 0:
+                print('Processed {} ...'.format(n))
     if ARGS.prediction_path:
-        np.savetxt(ARGS.prediction_path, probs)
+        probs.to_csv(ARGS.prediction_path, index=False)
         print('Probabilities saved to ' + ARGS.prediction_path)
-    print('n={}, tp={}, accuracy={:.4f}, avg(p)={:.4f}'.format(tp, n, tp/n, sum(probs)/n))
+    print('n={}, tp={}, accuracy={:.4f}'.format(tp, n, tp/n))
