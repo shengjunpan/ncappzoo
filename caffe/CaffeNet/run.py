@@ -23,6 +23,9 @@ _parser.add_argument("-a", "--action", default='predict',
 _parser.add_argument("-m", "--mean-proto",
                      default='model_data/input/mean.binaryproto',
                      help="path to mean binary proto file")
+_parser.add_argument("-P", "--prediction-path",
+                     default=None,
+                     help="path to save predicted probabilities")
 _parser.add_argument("-c", "--caffemodel",
                      default='model_data/snapshots/caffenet_iter_5000.caffemodel',
                      help="path to caffe model file")
@@ -56,8 +59,8 @@ class Predictor(ABC):
 
         super().__init__()
 
-    def transform_img(self, img, preproccessed):
-        if not preproccessed:
+    def transform_img(self, img, preprocessed):
+        if not preprocessed:
             #Histogram Equalization
             img[:, :, 0] = cv2.equalizeHist(img[:, :, 0])
             img[:, :, 1] = cv2.equalizeHist(img[:, :, 1])
@@ -65,7 +68,7 @@ class Predictor(ABC):
     
             #Image Resizing
             img = cv2.resize(img, (self.input_width, self.input_height), interpolation = cv2.INTER_CUBIC)
-            img = img.transpose((2,0,1))
+            img = img.transpose((2,0,1)) # HWC -> CHW
 
         img = img.astype(np.float32)
         img -= self.mean_array
@@ -86,6 +89,7 @@ class LocalPredictor(Predictor):
         
     def predict(self, img, preprocessed=False):
         img = super(LocalPredictor, self).transform_img(img, preprocessed)
+        img = img.reshape([1] + list(img.shape))
         self.net.blobs['data'].data[...] = img
         
         out = self.net.forward()
@@ -93,7 +97,7 @@ class LocalPredictor(Predictor):
         prob = pred_probas.max()
         label = pred_probas.argmax()
         return label, prob
-
+    
 class DevicePredictor(Predictor):
     """
     Predictor using a trained CaffeNet with NCS
@@ -114,6 +118,7 @@ class DevicePredictor(Predictor):
         
     def predict(self, img, preprocessed=False):
         img = super(DevicePredictor, self).transform_img(img, preprocessed)
+        img = img.transpose((1,0,2)) # CHW -> HWC (for NCS)
         self.graph.LoadTensor(img.astype(np.float16), 'user object')
 
         output, userobj = self.graph.GetResult()
@@ -163,6 +168,7 @@ if ARGS.action == 'predict':
 elif ARGS.action == 'validate':
     n = 0
     tp = 0
+    probs = []
     for validation_lmdb in ARGS.image:
         print('Validating', validation_lmdb)
         env = lmdb.open(validation_lmdb, readonly=True)
@@ -174,10 +180,15 @@ elif ARGS.action == 'validate':
                 datum.ParseFromString(value)
                 input_shape = (datum.channels, datum.height, datum.width)
                 img = np.fromstring(datum.data, dtype=np.uint8).reshape(input_shape)
-                label, _ = predictor.predict(img, preprocessed=True)
+                label, prob = predictor.predict(img, preprocessed=True)
+                probs.append(prob if label == 0 else 1.0 - prob)
+                
                 if label == datum.label:
                     tp += 1
                 if n % 100 == 0:
                     print('Processed {} ...'.format(n))
         env.close()
-    print('n={}, tp={}, accuracy={:.4f}'.format(tp, n, tp/n))
+    if ARGS.prediction_path:
+        np.savetxt(ARGS.prediction_path, probs)
+        print('Probabilities saved to ' + ARGS.prediction_path)
+    print('n={}, tp={}, accuracy={:.4f}, avg(p)={:.4f}'.format(tp, n, tp/n, sum(probs)/n))
